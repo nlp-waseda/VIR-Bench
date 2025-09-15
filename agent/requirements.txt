@@ -1,0 +1,13 @@
+langchain
+langchain-openai
+langchain-google-genai
+langchain-community
+python-dotenv
+requests
+tiktoken
+opencv-python
+numpy
+google-generativeai
+browser-use
+nest-asyncio
+playwright
