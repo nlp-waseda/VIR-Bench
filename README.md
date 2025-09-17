@@ -2,7 +2,7 @@
 
 <h1><i>VIR-Bench</i>:</br> Evaluating Geospatial and Temporal Understanding of MLLMs via Travel Video Itinerary Reconstruction</h1>
 
-<img src="icons/top.png" width="50%"/>
+<img src="icons/top.png" width="80%"/>
 <br />
 
 <a href="FIXME" target="_blank">
