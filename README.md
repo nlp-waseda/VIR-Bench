@@ -52,6 +52,7 @@
 - [VIR-Bench](#vir-bench)
 - [Experiments](#experiments)
   - [Task Definition](#task-definition)
+  - [Evaluation Setups](#evaluation-setups)
   - [Results](#results)
 - [Download the Dataset](#download-the-dataset)
 - [Run Your Own Evaluation](#run-your-own-evaluation)
@@ -70,7 +71,27 @@
 
 ## Experiments
 ### Task Definition
+We aim to generate visiting order graphs directly from videos with MLLMs. However, our preliminary experiments revealed that this end-to-end approach is too difficult for current models. To address this, we decompose the task into two sub-tasks: node prediction and edge prediction.
+
+**Node Prediction:** This task evaluates models’ geospatial understanding, akin to playing ``GeoGuessr’’. Given a video, MLLMs are asked to return all visited locations in three JSON lists (prefectures, cities, and POIs). For each POI, the model must also predict its category.
+
+**Edge Prediction:** Given a video and all visited locations (gold labels, shuffled), MLLMs are asked to predict all inclusion and transition edges that constitute the video’s visiting order graph. The output should be a JSON list of tuples formatted as `<source, target, edge_type>`. Inclusion edge prediction evaluates models’ geospatial knowledge, while transition edge prediction assesses their temporal understanding.
+
+### Evaluation Setups
+We evaluate 13 mainstream MLLMs on VIR-Bench in a zero-shot setting. For each model, we use the maximum number of input frames allowed by its interface or pre-training configuration.
+
+We evaluate models using macro-averaged precision, recall, and F1 across both node and edge prediction. For prefecture and city nodes, a prediction is considered correct only if it exactly matches the gold label's surface name. For POIs, we apply a lightweight sequence-matching algorithm: predictions with a similarity score above 0.7 (high similarity) are treated as correct; predictions with a score above 0.5 (moderate similarity) are also accepted if the predicted POI category matches the gold category; all others are treated incorrect. For inclusion and transition edges, a prediction is counted as correct only when the tuple `<source, target, edge_type>` exactly matches the gold tuple.
+
 ### Results
+Across all five task categories, open-weight models continue to underperform proprietary models. The strongest open model, Qwen2.5-VL-72B, comes close to proprietary performance on the easier categories (prefecture node prediction and inclusion edge prediction), but substantial gaps remain on the harder categories (POI node prediction and transition edge prediction). Other open models perform markedly worse: the LLaVA-Video series and InternVL3-8B achieve only single-digit F1 in city and POI node prediction, and five of the nine models also remain in single digits on transition edge prediction. In the proprietary models, Gemini-2.5-Pro is the top performer, especially on edge prediction, yet its F1 scores for city/POI node and transition edge prediction remain around 60. Taken together, these findings indicate that VIR-Bench is highly challenging for current MLLMs and highlight persistent limitations in geospatial and temporal understanding.
+
+<p align="center">
+  <img src="icons/table1.png" width="80%"/>
+</p>
+
+<p align="center">
+  <img src="icons/table2.png" width="80%"/>
+</p>
 
 ## Download the Dataset
 We release the VIR-Bench dataset strictly for research purposes, in compliance with <ins>Article 30-4 (Use for Non-Enjoyment Purposes)</ins> and <ins>Article 47-5 (Minor Use in Information Analysis Services)</ins> of the Japanese Copyright Act. Commercial use of any kind is strictly prohibited. The dataset may not be redistributed on servers outside Japan or under alternative licenses.
