@@ -54,7 +54,7 @@
   - [Task Definition](#task-definition)
   - [Results](#results)
 - [Download the Dataset](#download-the-dataset)
-- [RUN Your Own Evaluation](#run-your-own-evaluation)
+- [Run Your Own Evaluation](#run-your-own-evaluation)
   - [Installation](#installation)
   - [Evaluation](#evaluation)
 - [Travel-planning Agent](#travel-planning-agent)
@@ -86,7 +86,7 @@ VIR-Bench/
   │   └── ...
 ```
 
-## RUN Your Own Evaluation
+## Run Your Own Evaluation
 ### Installation
 
 ### Evaluation
