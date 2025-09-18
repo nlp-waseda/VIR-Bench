@@ -114,8 +114,53 @@ VIR-Bench/
 
 ## Run Your Own Evaluation
 ### Installation
+To evaluate the models featured in our paper, please use the following commands to set up your environment.
+```bash
+git clone https://github.com/nlp-waseda/VIR-Bench.git
+
+cd lmms-eval/
+pip install -e .
+
+git clone https://github.com/LLaVA-VL/LLaVA-NeXT
+cd LLaVA-NeXT && pip install -e . && cd ..
+
+pip install qwen-vl-utils[decord]==0.0.8
+pip install google-genai
+```
+
+Also update both `./lmms-eval/lmms_eval/tasks/virbench/virbench_node_prediction.yaml` and `./lmms-eval/lmms_eval/tasks/virbench/virbench_edge_prediction.yaml` by replacing the dataset path:
+```
+dataset_path: /YOUR_PATH_TO/VIR-Bench
+```
 
 ### Evaluation
+Below is an example using Gemini-2.5-Flash to perform evaluation on node prediction and edge prediction.
+
+```bash
+export GOOGLE_API_KEY="YOUR_API_KEY"
+
+# Node Prediction
+python -m accelerate.commands.launch \
+    --num_processes=1 \
+    -m lmms_eval \
+    --model gemini_api \
+    --model_args "model_version=gemini-2.5-flash,response_persistent_folder=YOUR_PATH_TO_RESPONSE_FOLDER" \
+    --tasks virbench_node_prediction \
+    --batch_size 1 \
+    --log_samples \
+    --output_path YOUR_OUTPUT_PATH
+
+# Edge Prediction
+python -m accelerate.commands.launch \
+    --num_processes=1 \
+    -m lmms_eval \
+    --model gemini_api \
+    --model_args "model_version=gemini-2.5-flash,response_persistent_folder=YOUR_PATH_TO_RESPONSE_FOLDER" \
+    --tasks virbench_edge_prediction \
+    --batch_size 1 \
+    --log_samples \
+    --output_path YOUR_OUTPUT_PATH
+```
 
 ## Travel-planning Agent
 We provide the full code for the travel-planning agent used in our paper. See the [agent/README](https://github.com/nlp-waseda/VIR-Bench/blob/main/agent/README.md) for setup and usage instructions.
