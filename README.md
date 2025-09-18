@@ -6,7 +6,7 @@
 <br />
 
 <a href="FIXME" target="_blank">
-    <img alt="arXiv" src="https://img.shields.io/badge/arXiv-traveling--across--languages-red?logo=arxiv" height="20" />
+    <img alt="arXiv" src="https://img.shields.io/badge/arXiv-VIR--Bench-red?logo=arxiv" height="20" />
 </a>
 
 <div>
