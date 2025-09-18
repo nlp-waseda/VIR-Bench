@@ -62,6 +62,11 @@
 - [Citation](#citation)
 
 ## VIR-Bench
+**Overview:** VIR-Bench is a benchmark to evaluate long-range geospatial-temporal understanding via itinerary reconstruction from travel vlog videos. The core output is a directed visiting order graph: nodes represent locations at three granularities (prefecture, city, and point of interest (POI)) and edges represent two relations, inclusion for spatial hierarchy and transition for temporal adjacency. The dataset comprises 200 travel vlogs filmed across Japan, a major inbound tourism destination, each accompanied by a manually annotated and double-reviewed visiting order graph.
+
+<p align="center">
+  <img src="icons/illustration.png" width="80%"/>
+</p>
 
 ## Experiments
 ### Task Definition
