@@ -118,13 +118,13 @@ To evaluate the models featured in our paper, please use the following commands 
 ```bash
 git clone https://github.com/nlp-waseda/VIR-Bench.git
 
-cd lmms-eval/
-pip install -e .
+cd lmms-eval && pip install -e . && cd ..
 
 git clone https://github.com/LLaVA-VL/LLaVA-NeXT
 cd LLaVA-NeXT && pip install -e . && cd ..
 
-pip install qwen-vl-utils[decord]==0.0.8
+pip install qwen-vl-utils[decord]
+pip install flash-attn --no-build-isolation
 pip install google-genai
 ```
 
@@ -158,6 +158,11 @@ python -m accelerate.commands.launch \
     --batch_size 1 \
     --log_samples \
     --output_path YOUR_OUTPUT_PATH
+```
+If you encounter issues with decord when running Qwen models, try fixing the code in `YOUR_PATH_TO_VENV/lib/python3.x/site-packages/qwen_vl_utils/vision_process.py`.
+```python3
+- vr = decord.VideoReader(path)
++ vr = decord.VideoReader(path, ctx=decord.cpu(0), num_threads=1)
 ```
 
 Below is an example using Gemini-2.5-Flash to perform evaluation on node prediction and edge prediction.
