@@ -73,7 +73,7 @@
 ### Task Definition
 We aim to generate visiting order graphs directly from videos with MLLMs. However, our preliminary experiments revealed that this end-to-end approach is too difficult for current models. To address this, we decompose the task into two sub-tasks: node prediction and edge prediction.
 
-**Node Prediction:** This task evaluates models’ geospatial understanding, akin to playing ``GeoGuessr’’. Given a video, MLLMs are asked to return all visited locations in three JSON lists (prefectures, cities, and POIs). For each POI, the model must also predict its category.
+**Node Prediction:** This task evaluates models’ geospatial understanding, akin to playing "GeoGuessr". Given a video, MLLMs are asked to return all visited locations in three JSON lists (prefectures, cities, and POIs). For each POI, the model must also predict its category.
 
 **Edge Prediction:** Given a video and all visited locations (gold labels, shuffled), MLLMs are asked to predict all inclusion and transition edges that constitute the video’s visiting order graph. The output should be a JSON list of tuples formatted as `<source, target, edge_type>`. Inclusion edge prediction evaluates models’ geospatial knowledge, while transition edge prediction assesses their temporal understanding.
 
