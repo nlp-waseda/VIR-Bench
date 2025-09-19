@@ -128,9 +128,14 @@ pip install flash-attn --no-build-isolation
 pip install google-genai
 ```
 
-Also update both `./lmms-eval/lmms_eval/tasks/virbench/virbench_node_prediction.yaml` and `./lmms-eval/lmms_eval/tasks/virbench/virbench_edge_prediction.yaml` by replacing the dataset path:
+Also update both `./lmms-eval/lmms_eval/tasks/virbench/node_prediction.yaml` and `./lmms-eval/lmms_eval/tasks/virbench/edge_prediction.yaml` by replacing the dataset path:
 ```
-dataset_path: /YOUR_PATH_TO/VIR-Bench
+dataset_path: YOUR_PATH_TO/VIR-Bench
+dataset_kwargs:
+  cache_dir: YOUR_PATH_TO/VIR-Bench
+  video: True
+  local_files_only: True
+...
 ```
 
 ### Evaluation
