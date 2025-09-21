@@ -1,0 +1,126 @@
+### **Overview**
+
+**Role**: You are an expert geo-location AI with a specialization in Japanese geography and travel analysis.
+
+**Objective**: Analyze the provided video of a trip in Japan. Based on the sequence of visited locations, generate a directed graph representing the visiting trajectory. The graph should distinguish between hierarchical containment (e.g., a landmark within a city) and sequential travel (e.g., moving from one landmark to another).
+
+**Input**: A video file depicting travel within Japan and all visited locations.
+
+-----
+
+### **Input**
+
+The input for visited locations is a JSON object, as shown below. Crucially, the lists are **not** in chronological order.
+
+```json
+{{ input_json }}
+```
+
+-----
+
+### **Edge Definitions**
+
+1. **Inclusion Edge**: A directed edge representing containment of one location within another. This edge flows from the larger geographical area to the smaller one.
+    - Example: 
+      - From a prefecture to a city: Osaka (prefecture) → Osaka (city)
+      - From a city to a point of interest (POI): Shibuya → Shibuya Station
+      - From a POI to a sub-POI: AEON MALL Zama → AEON Cinema Zama
+
+2. **Transition Edge**: A directed edge representing movement between two distinct locations at the same hierarchical level. This edge indicates the chronological flow of travel.
+    - Example:
+      - Between prefectures: Osaka → Hiroshima
+      - Between cities (within the same prefecture): Shibuya → Shinjuku
+      - Between POIs (within the same city): Tokyo Tower → Odaiba Marine Park
+
+-----
+
+### **Instructions & Rules**
+
+1. **Inclusion Edges**: 
+   - For every city in the input, create an inclusion edge from its corresponding prefecture node.
+   - For every POI in the input, create an inclusion edge from its corresponding city node.
+   - For every sub-POI (if applicable) within a POI, create an inclusion edge from the POI node to the sub-POI node.
+2. **Transition Edges**: 
+   - Create transition edges between consecutively visited locations at the same hierarchical level.
+   - A transition from a POI in City A to a POI in City B breaks the POI-level transition chain. The graph must instead show a transition edge from City A to City B.
+   - Similarly, a transition from a city in Prefecture A to a city in Prefecture B is represented by a transition edge from Prefecture A to Prefecture B.
+3. **Location Useage**:
+    - Please make sure to use only the exact location names provided in the input—do not alter, add to, or infer any names beyond what is given.
+4. **Unkonwn POIs**:
+    - For POIs which can not be identified with certainty, we provide placeholders in the format `"Unknown (category)"` (e.g., Unknown (restaurant)). Use these placeholders when creating edges.
+
+-----
+
+### **Output Format**
+
+Generate a single JSON object conforming to the schema below. This object will represent the final directed graph with all nodes and edges correctly populated according to the rules.
+
+**JSON Schema**:
+
+```json
+{
+    "edges": [
+        {
+        "source": "string",
+        "target": "string",
+        "type": "inclusion | transition"
+        }
+    ]
+}
+```
+
+**Example Output**:
+
+For a video showing a person arriving at Kansai International Airport, taking a train to Osaka, seeing the Glico Running Man sign, and then eating at a Dotonbori restaurant, the output should be:
+
+```json
+{
+    "edges": [
+      {
+        "source": "Osaka",
+        "target": "Izumisano",
+        "type": "inclusion"
+      },
+      {
+        "source": "Osaka",
+        "target": "Osaka",
+        "type": "inclusion"
+      },
+      {
+        "source": "Izumisano",
+        "target": "Kansai International Airport",
+        "type": "inclusion"
+      },
+      {
+        "source": "Osaka",
+        "target": "Namba Station",
+        "type": "inclusion"
+      },
+      {
+        "source": "Osaka",
+        "target": "Glico Running Man Sign",
+        "type": "inclusion"
+      },
+      {
+        "source": "Osaka",
+        "target": "Kukuru Dotonbori",
+        "type": "inclusion"
+      },
+      {
+        "source": "Izumisano",
+        "target": "Osaka",
+        "type": "transition"
+      },
+      {
+        "source": "Namba Station",
+        "target": "Glico Running Man Sign",
+        "type": "transition"
+      },
+      {
+        "source": "Glico Running Man Sign",
+        "target": "Kukuru Dotonbori",
+        "type": "transition"
+      }
+    ]
+}
+```
