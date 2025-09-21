@@ -5,9 +5,8 @@
 <img src="icons/top.png" width="95%"/>
 <br />
 
-<a href="FIXME" target="_blank">
-    <img alt="arXiv" src="https://img.shields.io/badge/arXiv-VIR--Bench-red?logo=arxiv" height="20" />
-</a>
+<font size=7><div align='center' > [[📖 arXiv Paper](FIXME)] [[📊 Dataset](https://github.com/nlp-waseda/VIR-Bench?tab=readme-ov-file#download-the-dataset)]   </div></font>
+
 
 <div>
     <a href="https://www.conan1024hao.com/" target="_blank">Hao Wang*</a><sup>1</sup>,
