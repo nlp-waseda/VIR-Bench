@@ -20,9 +20,9 @@
     <span>Yusuke Nakamura<sup>1</sup>,</span>
     <span>Sebastian Zwirner<sup>1</sup>,</span>
     <span>Yi-Chia Chen<sup>1</sup>,</span>
-    <span>Hiroyuki Otomo<sup>2</sup>,</span>
-    <span>Hiroki Ouchi<sup>4,2</sup>,</span>
-    <span>Daisuke Kawahara<sup>1</sup></span>
+    <a href="https://sites.google.com/view/hiroyuki-otomo" target="_blank">Hiroyuki Otomo</a><sup>2</sup>,
+    <a href="https://hiroki13.github.io/" target="_blank">Hiroki Ouchi</a><sup>4,2</sup>,
+    <a href="https://researchmap.jp/dkw?lang=en" target="_blank">Daisuke Kawahara</a><sup>1</sup>,
 </div>
 <br />
 
