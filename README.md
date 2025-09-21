@@ -197,6 +197,7 @@ python -m accelerate.commands.launch \
     --log_samples \
     --output_path YOUR_OUTPUT_PATH
 ```
+For example scripts covering all models, see the [scripts](https://github.com/nlp-waseda/VIR-Bench/blob/main/scripts) directory.
 
 ## Travel-planning Agent
 We provide the full code for the travel-planning agent used in our paper. See the [agent/README](https://github.com/nlp-waseda/VIR-Bench/blob/main/agent/README.md) for setup and usage instructions.
