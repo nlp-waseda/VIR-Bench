@@ -46,8 +46,6 @@
 - `2025-09-20` :rocket: We released the benchmark together with its evaluation framework and agent implementations.
 
 ## Contents
-- [Release](#release)
-- [Contents](#contents)
 - [VIR-Bench](#vir-bench)
 - [Experiments](#experiments)
   - [Task Definition](#task-definition)
