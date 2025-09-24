@@ -5,7 +5,7 @@
 <img src="icons/top.png" width="95%"/>
 <br />
 
-<font size=7><div align='center' > [[📖 arXiv Paper](FIXME)] [[📊 Dataset](https://github.com/nlp-waseda/VIR-Bench?tab=readme-ov-file#download-the-dataset)]   </div></font>
+<font size=7><div align='center' > [[📖 arXiv Paper](https://arxiv.org/abs/2509.19002)] [[📊 Dataset](https://github.com/nlp-waseda/VIR-Bench?tab=readme-ov-file#download-the-dataset)]   </div></font>
 
 
 <div>
@@ -203,4 +203,14 @@ We provide the full code for the travel-planning agent used in our paper. See th
 The evaluatiokn code is build upon [lmms-eval](https://github.com/EvolvingLMMs-Lab/lmms-eval). We acknowledge their team for providing this excellent toolkit for evaluating multimodal large language models.
 
 ## Citation
-FIXME
+```
+@misc{wang2025virbenchevaluatinggeospatialtemporal,
+      title={VIR-Bench: Evaluating Geospatial and Temporal Understanding of MLLMs via Travel Video Itinerary Reconstruction}, 
+      author={Hao Wang and Eiki Murata and Lingfang Zhang and Ayako Sato and So Fukuda and Ziqi Yin and Wentao Hu and Keisuke Nakao and Yusuke Nakamura and Sebastian Zwirner and Yi-Chia Chen and Hiroyuki Otomo and Hiroki Ouchi and Daisuke Kawahara},
+      year={2025},
+      eprint={2509.19002},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2509.19002}, 
+}
+```
