@@ -43,6 +43,7 @@
 </div>
 
 ## Release
+- `2025-11-14` :raised_hands: Our paper was accepted by AAAI 2026!
 - `2025-09-20` :rocket: We released the benchmark together with its evaluation framework and agent implementations.
 
 ## Contents
