@@ -96,8 +96,6 @@ We release the VIR-Bench dataset strictly for research purposes, in compliance w
 
 Dataset link: https://soya.infini-cloud.net/share/1302266998c5d047
 
-Access phrase: `waseda`
-
 To run evaluations, download and unzip `data.zip` and `videos.zip`, and organize them into the following directory structure.
 `graphs.zip` (containing visiting order graphs in both pickle and SVG formats) is optional and not required for evaluation.
 ```
