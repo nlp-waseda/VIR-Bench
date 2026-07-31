@@ -98,7 +98,7 @@ Due to copyright considerations, we no longer publicly distribute the video file
 - The graph annotations and dataset labels are provided in `data/graphs.zip` and `data/data.zip`, respectively.
 - If you have any questions about obtaining the dataset, please contact conan1024hao@gmail.com.
 
-To run evaluations, "download and unzip `data.zip`, and place the video files that you have retrieved yourself (using the video IDs with tools such as yt-dlp, as described above) into a `videos/` directory".
+To run evaluations, download and unzip `data.zip`, and place the video files that you have retrieved yourself (using the video IDs with tools such as yt-dlp, as described above) into a `videos/` directory.
 `graphs.zip` (containing visiting order graphs in both pickle and SVG formats) is optional and not required for evaluation.
 ```
 VIR-Bench/
