@@ -3,7 +3,10 @@ import json
 import os
 import pathlib
 import re
+import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple
 
 from accelerate import Accelerator, DistributedType
@@ -34,6 +37,10 @@ except Exception as e:
         f"Error importing soundfile, audio generation will not work: {str(e)}"
     )
 
+# Returned when all retries failed. Never cached: a cached sentinel would be
+# treated as a valid response on resume and skip that video forever.
+SAFETY_FAILURE_SENTINEL = "Gemini failed due to safety issues"
+
 
 @register_model("gemini_api")
 class GeminiAPI(lmms):
@@ -47,6 +54,7 @@ class GeminiAPI(lmms):
         interleave: bool = False,
         thinking_budget: int = 0,
         off_audio: bool = False,
+        num_concurrent: int = 1,
         # We will cache the Gemini API response in this path and use it for future requests
         **kwargs,
     ) -> None:
@@ -100,12 +108,39 @@ class GeminiAPI(lmms):
         self.device = self.accelerator.device
         
         self.off_audio = off_audio
+        self.num_concurrent = int(num_concurrent)
+        self._pending_files = []
 
         # self.modality = modality
 
+    def free_files(self, names):
+        for name in names:
+            try:
+                client.files.delete(name=name)
+            except Exception as e:
+                eval_logger.warning(f"Failed to delete uploaded file {name}: {e}")
+
     def free_video(self):
-        for f in client.files.list():
-            client.files.delete(name=f.name)
+        # Only delete files uploaded by this instance, so that parallel runs
+        # sharing the same API key do not delete each other's in-flight uploads.
+        self.free_files(self._pending_files)
+        self._pending_files = []
+
+    def write_response_cache(self):
+        # Write to a temp file in the same directory and rename it into place,
+        # so an interrupted write cannot leave a corrupted JSON cache behind.
+        folder = os.path.dirname(self.response_persistent_file)
+        fd, tmp_path = tempfile.mkstemp(dir=folder, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(self.response_cache, f)
+            # mkstemp creates the file 0600; keep the usual cache permissions.
+            os.chmod(tmp_path, 0o644)
+            os.replace(tmp_path, self.response_persistent_file)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
 
     def flatten(self, input):
         new_list = []
@@ -126,9 +161,18 @@ class GeminiAPI(lmms):
 
         return img_size
 
-    def encode_video(self, video_path):
+    def encode_video(self, video_path, tracker: list = None):
         uploaded_obj = client.files.upload(file=video_path)
-        file_state = client.files.list()[0].state
+        # tracker is None for the sequential path (shared self._pending_files,
+        # freed by free_video). Concurrent workers pass their own list so that
+        # each one only deletes the files it uploaded itself.
+        if tracker is None:
+            self._pending_files.append(uploaded_obj.name)
+        else:
+            tracker.append(uploaded_obj.name)
+        # Poll the uploaded file itself (files.list()[0] is the newest file in
+        # the whole account, which is wrong when runs share the API key).
+        file_state = client.files.get(name=uploaded_obj.name).state
         while file_state != types.FileState.ACTIVE:
             if file_state == types.FileState.FAILED:
                 eval_logger.error(f"Video upload failed for {video_path}")
@@ -136,8 +180,8 @@ class GeminiAPI(lmms):
             eval_logger.info(
                 f"Video upload in progress for {video_path}, current state: {file_state.name}"
             )
-            time.sleep(NUM_SECONDS_TO_SLEEP)
-            file_state = client.files.list()[0].state
+            time.sleep(10)
+            file_state = client.files.get(name=uploaded_obj.name).state
         return uploaded_obj
 
     def encode_audio(self, audio):
@@ -145,14 +189,14 @@ class GeminiAPI(lmms):
         sf.write(audio_io, audio["array"], audio["sampling_rate"], format="WAV")
         return client.files.upload(audio_io, mime_type="audio/wav")
 
-    def convert_modality(self, images):
+    def convert_modality(self, images, tracker: list = None):
         for idx, img in enumerate(images):
             if isinstance(img, dict) and "sampling_rate" in img:  # audio
                 audio = self.encode_audio(img)
                 images[idx] = audio
             elif isinstance(img, str):  # video
                 try:
-                    images[idx] = self.encode_video(img)
+                    images[idx] = self.encode_video(img, tracker=tracker)
                 except Exception as e:
                     eval_logger.error(f"Error converting video: {str(e)}")
         return images
@@ -171,8 +215,192 @@ class GeminiAPI(lmms):
 
         return result
 
+    def generate_one(
+        self, contexts, gen_kwargs, doc_to_visual, doc_id, task, split, tracker=None
+    ):
+        if "max_new_tokens" not in gen_kwargs:
+            gen_kwargs["max_new_tokens"] = 1024
+        if "temperature" not in gen_kwargs:
+            gen_kwargs["temperature"] = 0
+
+        if self.model_version == "gemini-2.5-pro":
+            gen_kwargs["max_new_tokens"] = self.thinking_budget
+
+        config = types.GenerateContentConfig(
+            max_output_tokens=gen_kwargs["max_new_tokens"],
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=self.thinking_budget
+            ),
+            temperature=gen_kwargs["temperature"],
+            safety_settings=[
+                types.SafetySetting(
+                    category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                    threshold="BLOCK_NONE",
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_HATE_SPEECH",
+                    threshold="BLOCK_NONE",
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_HARASSMENT",
+                    threshold="BLOCK_NONE",
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    threshold="BLOCK_NONE",
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_CIVIC_INTEGRITY",
+                    threshold="BLOCK_NONE",
+                )
+            ],
+        )
+
+        visuals = [doc_to_visual(self.task_dict[task][split][doc_id])]
+        visuals = self.flatten(visuals)
+        if self.off_audio:
+            new_visuals = []
+            for visual in visuals:
+                audio_removed = visual.replace(".mp4", ".no_audio.mp4")
+                import os, subprocess
+                if not os.path.exists(audio_removed):
+                    cmd = [
+                        "ffmpeg",
+                        "-i", visual,
+                        "-c:v", "copy",
+                        "-an",
+                        audio_removed,
+                    ]
+                    subprocess.run(cmd, check=True)
+                new_visuals.append(audio_removed)
+            visuals = new_visuals
+        visuals = self.convert_modality(visuals, tracker=tracker)
+        use_fixed_video = False
+
+        if self.interleave:
+            message = self.construct_interleaved_input(contexts, visuals)
+        else:
+            message = [contexts] + visuals
+
+        for attempt in range(5):
+            try:
+                content = client.models.generate_content(
+                    model=self.model_version,
+                    contents=message,
+                    config=config,
+                )
+                content = content.text
+                assert content is not None
+                break
+            except Exception as e:
+                eval_logger.info(
+                    f"Attempt {attempt + 1} failed with error: {str(e)}"
+                )
+                # fix the video
+                if str(e) == "" and not use_fixed_video:
+                    visuals = [doc_to_visual(self.task_dict[task][split][doc_id])]
+                    visuals = self.flatten(visuals)
+                    new_visuals = []
+                    for visual in visuals:
+                        if isinstance(visual, str):
+                            if self.off_audio:
+                                fixed = visual.replace(".mp4", ".fixed_gemini.no_audio.mp4")
+                            else:
+                                fixed = visual.replace(".mp4", ".fixed_gemini.mp4")
+                            import os, subprocess
+                            if not os.path.exists(fixed):
+                                if self.off_audio:
+                                    cmd = [
+                                        "ffmpeg",
+                                        "-i", visual,
+                                        "-vf", "scale=-2:240",
+                                        "-c:v", "libx264",
+                                        "-preset", "veryfast",
+                                        "-b:v", "400k",
+                                        "-pix_fmt", "yuv420p",
+                                        "-an",
+                                        fixed,
+                                    ]
+                                else:
+                                    cmd = [
+                                        "ffmpeg",
+                                        "-i", visual,
+                                        "-vf", "scale=-2:240",
+                                        "-c:v", "libx264",
+                                        "-preset", "veryfast",
+                                        "-b:v", "400k",
+                                        "-pix_fmt", "yuv420p",
+                                        "-c:a", "copy",
+                                        fixed,
+                                    ]
+                                subprocess.run(cmd, check=True)
+                            new_visuals.append(fixed)
+                    visuals = self.convert_modality(new_visuals, tracker=tracker)
+                    message = [contexts] + visuals
+                    use_fixed_video = True
+                if isinstance(e, ValueError):
+                    try:
+                        eval_logger.info(
+                            f"Prompt feed_back: {content.prompt_feedback}"
+                        )
+                        content = ""
+                        break
+                    except Exception:
+                        pass
+                if (
+                    attempt < 5 - 1
+                ):  # If we have retries left, sleep and then continue to next attempt
+                    time.sleep(NUM_SECONDS_TO_SLEEP)
+                else:  # If this was the last attempt, log and return empty
+                    eval_logger.error(
+                        f"All 5 attempts failed. Last error message: {str(e)}"
+                    )
+                    content = SAFETY_FAILURE_SENTINEL
+        return content
+
+    def process_request(self, args, lock, pbar):
+        # One worker handles a single request end-to-end. Only the response
+        # cache and the progress bar are shared, and both are held under lock.
+        contexts, gen_kwargs, doc_to_visual, doc_id, task, split = args
+        doc_uuid = f"{task}___{split}___{doc_id}"
+
+        if self.continual_mode and self.cache_mode == "resume":
+            with lock:
+                content = self.response_cache.get(doc_uuid, None)
+            if content and content != "":
+                with lock:
+                    pbar.update(1)
+                return content
+
+        tracker = []
+        try:
+            content = self.generate_one(
+                contexts,
+                gen_kwargs,
+                doc_to_visual,
+                doc_id,
+                task,
+                split,
+                tracker=tracker,
+            )
+        except Exception as e:
+            # An exception escaping the retry loop (e.g. a failing ffmpeg
+            # fallback) must not kill the whole run: return the sentinel so the
+            # doc is retried on the next resume instead.
+            eval_logger.error(f"Request for doc {doc_id} failed with unhandled error: {e}")
+            content = SAFETY_FAILURE_SENTINEL
+        finally:
+            self.free_files(tracker)
+
+        with lock:
+            # Cache the response, but never the failure sentinel.
+            if self.continual_mode is True and content != SAFETY_FAILURE_SENTINEL:
+                self.response_cache[doc_uuid] = content
+                self.write_response_cache()
+            pbar.update(1)
+        return content
+
     def generate_until(self, requests) -> List[str]:
-        res = []
         pbar = tqdm(
             total=len(requests), disable=(self.rank != 0), desc="Model Responding"
         )
@@ -180,6 +408,23 @@ class GeminiAPI(lmms):
         def get_uuid(task, split, doc_id):
             return f"{task}___{split}___{doc_id}"
 
+        if self.num_concurrent > 1:
+            eval_logger.info(
+                f"Running requests with {self.num_concurrent} concurrent workers"
+            )
+            res = [None] * len(requests)
+            lock = threading.Lock()
+            with ThreadPoolExecutor(max_workers=self.num_concurrent) as executor:
+                future_to_index = {
+                    executor.submit(self.process_request, reg.args, lock, pbar): index
+                    for index, reg in enumerate(requests)
+                }
+                for future in as_completed(future_to_index):
+                    res[future_to_index[future]] = future.result()
+            pbar.close()
+            return res
+
+        res = []
         for contexts, gen_kwargs, doc_to_visual, doc_id, task, split in [
             reg.args for reg in requests
         ]:
@@ -192,154 +437,19 @@ class GeminiAPI(lmms):
                         pbar.update(1)
                         continue
 
-            if "max_new_tokens" not in gen_kwargs:
-                gen_kwargs["max_new_tokens"] = 1024
-            if "temperature" not in gen_kwargs:
-                gen_kwargs["temperature"] = 0
-            
-            if self.model_version == "gemini-2.5-pro":
-                gen_kwargs["max_new_tokens"] = self.thinking_budget
-
-            config = types.GenerateContentConfig(
-                max_output_tokens=gen_kwargs["max_new_tokens"],
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=self.thinking_budget
-                ),
-                temperature=gen_kwargs["temperature"],
-                safety_settings=[
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                        threshold="BLOCK_NONE",
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_HATE_SPEECH",
-                        threshold="BLOCK_NONE",
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_HARASSMENT",
-                        threshold="BLOCK_NONE",
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                        threshold="BLOCK_NONE",
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_CIVIC_INTEGRITY",
-                        threshold="BLOCK_NONE",
-                    )
-                ],
+            content = self.generate_one(
+                contexts, gen_kwargs, doc_to_visual, doc_id, task, split
             )
-
-            visuals = [doc_to_visual(self.task_dict[task][split][doc_id])]
-            visuals = self.flatten(visuals)
-            if self.off_audio:
-                new_visuals = []
-                for visual in visuals:
-                    audio_removed = visual.replace(".mp4", ".no_audio.mp4")
-                    import os, subprocess
-                    if not os.path.exists(audio_removed):
-                        cmd = [
-                            "ffmpeg",
-                            "-i", visual,
-                            "-c:v", "copy",
-                            "-an",
-                            audio_removed,
-                        ]
-                        subprocess.run(cmd, check=True)
-                    new_visuals.append(audio_removed)
-                visuals = new_visuals
-            visuals = self.convert_modality(visuals)
-            use_fixed_video = False
-
-            if self.interleave:
-                message = self.construct_interleaved_input(contexts, visuals)
-            else:
-                message = [contexts] + visuals
-
-            for attempt in range(5):
-                try:
-                    content = client.models.generate_content(
-                        model=self.model_version,
-                        contents=message,
-                        config=config,
-                    )
-                    content = content.text
-                    assert content is not None
-                    break
-                except Exception as e:
-                    eval_logger.info(
-                        f"Attempt {attempt + 1} failed with error: {str(e)}"
-                    )
-                    # fix the video
-                    if str(e) == "" and not use_fixed_video:
-                        visuals = [doc_to_visual(self.task_dict[task][split][doc_id])]
-                        visuals = self.flatten(visuals)
-                        new_visuals = []
-                        for visual in visuals:
-                            if isinstance(visual, str):
-                                if self.off_audio:
-                                    fixed = visual.replace(".mp4", ".fixed_gemini.no_audio.mp4")
-                                else:
-                                    fixed = visual.replace(".mp4", ".fixed_gemini.mp4")
-                                import os, subprocess
-                                if not os.path.exists(fixed):
-                                    if self.off_audio:
-                                        cmd = [
-                                            "ffmpeg",
-                                            "-i", visual,
-                                            "-vf", "scale=-2:240",
-                                            "-c:v", "libopenh264",
-                                            "-preset", "veryfast",
-                                            "-b:v", "400k",
-                                            "-pix_fmt", "yuv420p",
-                                            "-an",
-                                            fixed,
-                                        ]
-                                    else:
-                                        cmd = [
-                                            "ffmpeg",
-                                            "-i", visual,
-                                            "-vf", "scale=-2:240",
-                                            "-c:v", "libopenh264",
-                                            "-preset", "veryfast",
-                                            "-b:v", "400k",
-                                            "-pix_fmt", "yuv420p",
-                                            "-c:a", "copy",
-                                            fixed,
-                                        ]
-                                    subprocess.run(cmd, check=True)
-                                new_visuals.append(fixed)
-                        visuals = self.convert_modality(new_visuals)
-                        message = [contexts] + visuals
-                        use_fixed_video = True
-                    if isinstance(e, ValueError):
-                        try:
-                            eval_logger.info(
-                                f"Prompt feed_back: {content.prompt_feedback}"
-                            )
-                            content = ""
-                            break
-                        except Exception:
-                            pass
-                    if (
-                        attempt < 5 - 1
-                    ):  # If we have retries left, sleep and then continue to next attempt
-                        time.sleep(NUM_SECONDS_TO_SLEEP)
-                    else:  # If this was the last attempt, log and return empty
-                        eval_logger.error(
-                            f"All 5 attempts failed. Last error message: {str(e)}"
-                        )
-                        content = "Gemini failed due to safety issues"
             res.append(content)
             pbar.update(1)
 
             self.free_video()
 
-            if self.continual_mode is True:  # Cache the response
+            # Cache the response, but never the failure sentinel.
+            if self.continual_mode is True and content != SAFETY_FAILURE_SENTINEL:
                 doc_uuid = get_uuid(task, split, doc_id)
                 self.response_cache[doc_uuid] = content
-                with open(self.response_persistent_file, "w") as f:
-                    json.dump(self.response_cache, f)
+                self.write_response_cache()
 
         pbar.close()
         return res

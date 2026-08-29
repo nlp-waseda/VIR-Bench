@@ -138,7 +138,7 @@ def virbench_doc_to_target(doc):
 
 
 def virbench_doc_to_visual(doc):
-    with open(Path(__file__).parent / "node_prediction_debug.yaml", "r") as f:
+    with open(Path(__file__).parent / "node_prediction.yaml", "r") as f:
         raw_data = f.readlines()
         safe_data = []
         for i, line in enumerate(raw_data):
@@ -155,20 +155,7 @@ def virbench_doc_to_visual(doc):
     return [video_path]
 
 
-def node_prediction_process_results(doc, results):
-    pred = results[0]
-    
-    if pred != "Gemini failed due to safety issues":
-        parsed_pred = parse_json(pred)
-        if not isinstance(parsed_pred, dict):
-            parsed_pred = {
-                "prefectures": [],
-                "cities": [],
-                "points_of_interest": []
-            }
-    else:
-        parsed_pred = "Gemini failed due to safety issues"
-
+def build_node_answer(doc):
     answer = {
         "prefectures": [],
         "cities": [],
@@ -177,7 +164,7 @@ def node_prediction_process_results(doc, results):
     for type, display_name, attributes in zip(doc["graph"]["nodes"]["type"], doc["graph"]["nodes"]["display_name"], doc["graph"]["nodes"]["attributes"]):
         display_name = eval(display_name)
         attributes = eval(attributes)
-        
+
         if type == "ROOT":
             continue
         elif type == "PREFECTURE":
@@ -197,7 +184,26 @@ def node_prediction_process_results(doc, results):
                 "is_store_unknown": attributes["parsed_description"]["is_store_unknown"],
                 "store_name": attributes["parsed_description"]["store_name"],
             })
-            
+
+    return answer
+
+
+def node_prediction_process_results(doc, results):
+    pred = results[0]
+
+    if pred != "Gemini failed due to safety issues":
+        parsed_pred = parse_json(pred)
+        if not isinstance(parsed_pred, dict):
+            parsed_pred = {
+                "prefectures": [],
+                "cities": [],
+                "points_of_interest": []
+            }
+    else:
+        parsed_pred = "Gemini failed due to safety issues"
+
+    answer = build_node_answer(doc)
+
     return {
         "virbench_scores": {
             "video_id": doc["video_id"],
@@ -236,16 +242,7 @@ def get_name_from_node_id(doc, node_id, language):
         return display_name[language].strip()
 
 
-def edge_prediction_process_results(doc, results):
-    pred = results[0]
-    
-    if pred != "Gemini failed due to safety issues":
-        parsed_pred = parse_json(pred)
-        if not isinstance(parsed_pred, dict):
-            parsed_pred = {"edges": []}
-    else:
-        parsed_pred = "Gemini failed due to safety issues"
-
+def build_edge_answer(doc, language):
     answer = []
     for source, target, type in zip(
         doc["graph"]["edges"]["source"],
@@ -256,7 +253,7 @@ def edge_prediction_process_results(doc, results):
             continue
         if source == "0": # ROOT node
             continue
-        source_name, target_name = get_name_from_node_id(doc, source, global_language), get_name_from_node_id(doc, target, global_language)
+        source_name, target_name = get_name_from_node_id(doc, source, language), get_name_from_node_id(doc, target, language)
         if source_name is None or target_name is None:
             continue
         if type == "INCLUSION":
@@ -271,7 +268,22 @@ def edge_prediction_process_results(doc, results):
                 "target": target_name,
                 "type": "transition"
             })
-    
+
+    return answer
+
+
+def edge_prediction_process_results(doc, results):
+    pred = results[0]
+
+    if pred != "Gemini failed due to safety issues":
+        parsed_pred = parse_json(pred)
+        if not isinstance(parsed_pred, dict):
+            parsed_pred = {"edges": []}
+    else:
+        parsed_pred = "Gemini failed due to safety issues"
+
+    answer = build_edge_answer(doc, global_language)
+
     return {
         "virbench_scores": {
             "video_id": doc["video_id"],
@@ -578,3 +590,160 @@ def evaluate_edge_prediction(samples):
 def edge_prediction_aggregate_results(results):
     evaluation_results = evaluate_edge_prediction(results)
     return evaluation_results
+
+
+def end2end_process_results(doc, results):
+    pred = results[0]
+
+    if pred != "Gemini failed due to safety issues":
+        parsed_pred = parse_json(pred)
+        if not isinstance(parsed_pred, dict):
+            parsed_pred = {
+                "prefectures": [],
+                "cities": [],
+                "points_of_interest": [],
+                "edges": []
+            }
+    else:
+        parsed_pred = "Gemini failed due to safety issues"
+
+    return {
+        "virbench_scores": {
+            "video_id": doc["video_id"],
+            "answer_nodes": build_node_answer(doc),
+            "answer_edges": build_edge_answer(doc, global_language),
+            "parsed_pred": parsed_pred,
+        }
+    }
+
+
+def get_name_from_answer_poi(poi, language):
+    # Same naming rule as get_name_from_node_id, applied to a POI entry of the
+    # node answer (POIs with is_unknown are already dropped by build_node_answer).
+    if poi["is_store_unknown"]:
+        return poi["display_name"][language].replace("(店舗不明)", "").replace("(Store Unknown)", "").strip()
+    if poi["store_name"] != "":
+        return poi["store_name"]
+    return poi["display_name"][language].strip()
+
+
+def build_alignment(answer_nodes, parsed_pred, language="en"):
+    # Maps normalized predicted node names to the canonical gold names used in
+    # the gold edge list (i.e. what get_name_from_node_id produces), so that
+    # predicted edges can be compared against the gold edges.
+    # Note: names may collide across levels (e.g. Osaka prefecture vs Osaka city),
+    # but in that case both levels resolve to the identical canonical string,
+    # so a single flat map is enough.
+    alignment = {}
+
+    def register(pred_name, gold_name):
+        if not isinstance(pred_name, str):
+            return
+        alignment[pred_name.strip().lower()] = gold_name
+        names_p, _ = parse_poi(pred_name, "pred")
+        alignment[names_p[0]] = gold_name
+
+    # prefectures and cities: exact display name match, greedy in gold order
+    for level in ["prefectures", "cities"]:
+        matched_preds = set()
+        for node_a in answer_nodes[level]:
+            for idx, node_p in enumerate(parsed_pred.get(level, [])):
+                if idx in matched_preds:
+                    continue
+                if node_p in [node_a["display_name"]["ja"], node_a["display_name"]["en"]]:
+                    matched_preds.add(idx)
+                    register(node_p, node_a["display_name"][language])
+                    break
+
+    # POI: fuzzy match, greedy in gold order
+    matched_preds = set()
+    for poi_a in answer_nodes["points_of_interest"]:
+        names_a, categories_a = parse_poi(poi_a, "answer")
+        for idx, poi_p in enumerate(parsed_pred.get("points_of_interest", [])):
+            if idx in matched_preds:
+                continue
+            if not isinstance(poi_p, str):
+                continue
+            name_p, category_p = parse_poi(poi_p, "pred")
+            if match_poi(names_a, categories_a, name_p[0], category_p[0] if category_p else None):
+                matched_preds.add(idx)
+                register(poi_p, get_name_from_answer_poi(poi_a, language))
+                break
+
+    return alignment
+
+
+def align_name(name, alignment):
+    key = name.strip().lower()
+    if key in alignment:
+        return alignment[key]
+    names_p, _ = parse_poi(name, "pred")
+    if names_p[0] in alignment:
+        return alignment[names_p[0]]
+    return name
+
+
+def end2end_aggregate_results(results):
+    unknown_poi = {
+        "en": "Unknown",
+        "ja": "不明"
+    }
+    unknown_prefix = f"{unknown_poi[global_language]} ("
+
+    node_samples = []
+    edge_samples = []
+    edge_samples_excl_unknown = []
+
+    for sample in results:
+        parsed_pred = sample["parsed_pred"]
+        answer_nodes = sample["answer_nodes"]
+        answer_edges = sample["answer_edges"]
+
+        if parsed_pred == "Gemini failed due to safety issues":
+            continue
+
+        pred_nodes = parsed_pred if isinstance(parsed_pred, dict) else None
+        node_samples.append({
+            "answer": answer_nodes,
+            "parsed_pred": pred_nodes,
+        })
+
+        pred_edges = pred_nodes.get("edges", []) if pred_nodes else []
+        if not isinstance(pred_edges, list):
+            pred_edges = []
+
+        alignment = build_alignment(answer_nodes, pred_nodes if pred_nodes else {}, global_language)
+        canon_edges = []
+        for edge in pred_edges:
+            if not isinstance(edge, dict):
+                continue
+            source, target = edge.get("source"), edge.get("target")
+            if not isinstance(source, str) or not isinstance(target, str):
+                continue
+            canon_edges.append({
+                "source": align_name(source, alignment),
+                "target": align_name(target, alignment),
+                "type": edge.get("type"),
+            })
+
+        edge_samples.append({
+            "parsed_pred": {"edges": canon_edges},
+            "answer": answer_edges,
+        })
+
+        # unknown POI placeholders are unmatchable in the end-to-end setting,
+        # since the model is never told about them
+        answer_edges_excl_unknown = [
+            edge for edge in answer_edges
+            if not edge["source"].startswith(unknown_prefix) and not edge["target"].startswith(unknown_prefix)
+        ]
+        edge_samples_excl_unknown.append({
+            "parsed_pred": {"edges": canon_edges},
+            "answer": answer_edges_excl_unknown,
+        })
+
+    return {
+        "nodes": evaluate_node_prediction(node_samples),
+        "edges_aligned": evaluate_edge_prediction(edge_samples),
+        "edges_aligned_excl_unknown": evaluate_edge_prediction(edge_samples_excl_unknown),
+    }

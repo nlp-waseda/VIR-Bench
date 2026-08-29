@@ -1,0 +1,151 @@
+### **Overview**
+
+**Role**: You are an expert geo-location AI with a specialization in Japanese geography and travel analysis.
+
+**Objective**: Analyze the provided video of a trip in Japan, identify all visited locations, and, based on the sequence of visited locations, generate a directed graph representing the visiting trajectory in one shot. The graph should distinguish between hierarchical containment (e.g., a landmark within a city) and sequential travel (e.g., moving from one landmark to another).
+
+**Input**: A video file depicting travel within Japan.
+
+-----
+
+### **Location Definitions**
+
+1. **Prefecture (都道府県)**: The highest-level administrative division of Japan, such as Tokyo, Osaka, Hiroshima, Hokkaido, etc.
+
+2. **City (東京23区、市町村)**: The municipality within a prefecture. This include Tokyo's 23 Specific Wards like Shibuya and Minato, cities like Yokohama and Sapporo, towns like Karuizawa and Hakone, and villages like Hakuba and Shirakawa.
+
+3. **Point of Interest (POI)**: A specific, named location. This includes landmarks, tourist attractions, stations, restaurants, cafes, stores, parks, museums, etc.
+
+-----
+
+### **Edge Definitions**
+
+1. **Inclusion Edge**: A directed edge representing containment of one location within another. This edge flows from the larger geographical area to the smaller one.
+    - Example:
+      - From a prefecture to a city: Osaka (prefecture) → Osaka (city)
+      - From a city to a point of interest (POI): Shibuya → Shibuya Station
+      - From a POI to a sub-POI: AEON MALL Zama → AEON Cinema Zama
+
+2. **Transition Edge**: A directed edge representing movement between two distinct locations at the same hierarchical level. This edge indicates the chronological flow of travel.
+    - Example:
+      - Between prefectures: Osaka → Hiroshima
+      - Between cities (within the same prefecture): Shibuya → Shinjuku
+      - Between POIs (within the same city): Tokyo Tower → Odaiba Marine Park
+
+-----
+
+### **Instructions & Rules**
+
+1. **No Duplicates**: Each unique prefecture, city, and POI should appear only once in its respective list.
+2. **Maximum Specificity**: Always use the most specific and complete name identifiable. For businesses, include the branch name if visible (e.g., "Starbucks Shibuya Tsutaya" not just "Starbucks").
+3. **Verification over Guesswork**: Only include locations that can be confidently identified from clear visual or auditory cues in the video (e.g., signs, logos, building architecture, announcements). Do not guess or infer locations that are not explicitly evidenced.
+4. **Minimum POI Unit**: Do not list integrated facilities within a POI (e.g., a museum's gift shop). However, you must list separate businesses located inside a larger commercial complex, such as a specific café within a shopping mall or train station.
+5. **Maximum POI Unit**: Do not include general geographic areas, districts, or neighborhoods which are not single, managed entities (e.g., "Minato Mirai," "Kokusai Dori").
+6. **POI Formatting**: Strictly adhere to the `"Name (category)"` format for all entries in the `points_of_interest` list. You must select the single most appropriate category for each POI from the curated list below.
+
+**POI Category List**:
+['adventure_sports_center', 'airport', 'american_restaurant', 'amusement_center', 'amusement_park', 'aquarium', 'arena', 'art_gallery', 'asian_grocery_store', 'athletic_field', 'bagel_shop', 'bakery', 'bank', 'bar', 'beach', 'beauty_salon', 'bed_and_breakfast', 'bicycle_store', 'book_store', 'botanical_garden', 'budget_japanese_inn', 'buffet_restaurant', 'bus_station', 'bus_stop', 'cafe', 'cafeteria', 'campground', 'car_rental', 'cemetery', 'chinese_restaurant', 'chocolate_shop', 'church', 'city_hall', 'clothing_store', 'coffee_shop', 'community_center', 'concert_hall', 'confectionery', 'convenience_store', 'corporate_office', 'cultural_center', 'cultural_landmark', 'deli', 'department_store', 'dessert_restaurant', 'dessert_shop', 'diner', 'discount_store', 'dog_cafe', 'donut_shop', 'drugstore', 'electronics_store', 'event_venue', 'farm', 'fast_food_restaurant', 'ferris_wheel', 'ferry_terminal', 'fishing_pond', 'florist', 'food', 'food_court', 'food_store', 'french_restaurant', 'furniture_store', 'garden', 'gift_shop', 'golf_course', 'government_office', 'grocery_store', 'guest_house', 'gym', 'hair_salon', 'hamburger_restaurant', 'hiking_area', 'historical_landmark', 'historical_place', 'home_goods_store', 'hostel', 'hotel', 'ice_cream_shop', 'inn', 'insurance_agency', 'international_airport', 'italian_restaurant', 'japanese_inn', 'japanese_restaurant', 'jewelry_store', 'juice_shop', 'karaoke', 'korean_restaurant', 'lebanese_restaurant', 'library', 'liquor_store', 'local_government_office', 'lodging', 'marina', 'market', 'meal_takeaway', 'movie_theater', 'museum', 'nail_salon', 'national_park', 'natural_feature', 'observation_deck', 'park', 'parking', 'performing_arts_theater', 'pet_store', 'pizza_restaurant', 'place_of_worship', 'playground', 'point_of_interest', 'post_office', 'premise', 'pub', 'public_bath', 'public_bathroom', 'ramen_restaurant', 'ranch', 'real_estate_agency', 'resort_hotel', 'rest_stop', 'restaurant', 'resturant', 'sandwich_shop', 'school', 'sculpture', 'seafood_restaurant', 'secondary_school', 'shoe_store', 'shop', 'shopping_mall', 'ski_resort', 'spa', 'sporting_goods_store', 'steak_house', 'store', 'subway_station', 'supermarket', 'sushi_restaurant', 'taxi_stand', 'tea_house', 'thai_restaurant', 'tour_agency', 'tourist_attraction', 'tourist_information_center', 'train_station', 'transit_station', 'travel_agency', 'university', 'vegan_restaurant', 'video_arcade', 'visitor_center', 'wholesaler', 'wildlife_park', 'zoo']
+
+7. **Inclusion Edges**:
+   - For every city you identify, create an inclusion edge from its corresponding prefecture node.
+   - For every POI you identify, create an inclusion edge from its corresponding city node.
+   - For every sub-POI (if applicable) within a POI, create an inclusion edge from the POI node to the sub-POI node.
+8. **Transition Edges**:
+   - Create transition edges between consecutively visited locations at the same hierarchical level.
+   - A transition from a POI in City A to a POI in City B breaks the POI-level transition chain. The graph must instead show a transition edge from City A to City B.
+   - Similarly, a transition from a city in Prefecture A to a city in Prefecture B is represented by a transition edge from Prefecture A to Prefecture B.
+9. **Node-Edge Consistency**:
+   - Every `source` and `target` in `edges` must be a name that appears in your own `prefectures`, `cities`, or `points_of_interest` lists—do not use any name that is absent from those lists.
+   - For POIs, use the name **without** the `"(category)"` suffix inside `edges` (e.g., use `"Namba Station"`, not `"Namba Station (train_station)"`).
+
+-----
+
+### **Output Format**
+
+Generate a single JSON object conforming to the schema below. This object will represent the final directed graph with all nodes and edges correctly populated according to the rules.
+
+**JSON Schema**:
+
+```json
+{
+  "prefectures": ["list of prefectures"],
+  "cities": ["list of cities"],
+  "points_of_interest": ["list of points of interest"],
+  "edges": [
+    {
+      "source": "string",
+      "target": "string",
+      "type": "inclusion | transition"
+    }
+  ]
+}
+```
+
+**Example Output**:
+
+For a video showing a person arriving at Kansai International Airport, taking a train to Osaka, seeing the Glico Running Man sign, and then eating at a Dotonbori restaurant, the output should be:
+
+```json
+{
+  "prefectures": [
+    "Osaka"
+  ],
+  "cities": [
+    "Izumisano",
+    "Osaka"
+  ],
+  "points_of_interest": [
+    "Kansai International Airport (airport)",
+    "Namba Station (train_station)",
+    "Glico Running Man Sign (tourist_attraction)",
+    "Kukuru Dotonbori (japanese_restaurant)"
+  ],
+  "edges": [
+    {
+      "source": "Osaka",
+      "target": "Izumisano",
+      "type": "inclusion"
+    },
+    {
+      "source": "Osaka",
+      "target": "Osaka",
+      "type": "inclusion"
+    },
+    {
+      "source": "Izumisano",
+      "target": "Kansai International Airport",
+      "type": "inclusion"
+    },
+    {
+      "source": "Osaka",
+      "target": "Namba Station",
+      "type": "inclusion"
+    },
+    {
+      "source": "Osaka",
+      "target": "Glico Running Man Sign",
+      "type": "inclusion"
+    },
+    {
+      "source": "Osaka",
+      "target": "Kukuru Dotonbori",
+      "type": "inclusion"
+    },
+    {
+      "source": "Izumisano",
+      "target": "Osaka",
+      "type": "transition"
+    },
+    {
+      "source": "Namba Station",
+      "target": "Glico Running Man Sign",
+      "type": "transition"
+    },
+    {
+      "source": "Glico Running Man Sign",
+      "target": "Kukuru Dotonbori",
+      "type": "transition"
+    }
+  ]
+}
+```
